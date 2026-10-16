@@ -1,0 +1,156 @@
+diff --git a/stwo_cairo_prover/crates/cairo-air/src/lib.rs b/stwo_cairo_prover/crates/cairo-air/src/lib.rs
+index 73481316..1c5ca4a9 100644
+--- a/stwo_cairo_prover/crates/cairo-air/src/lib.rs
++++ b/stwo_cairo_prover/crates/cairo-air/src/lib.rs
+@@ -26,6 +26,10 @@ use stwo_cairo_common::preprocessed_columns::preprocessed_trace::PreProcessedTra
+ pub enum PreProcessedTraceVariant {
+     Canonical,
+     CanonicalWithoutPedersen,
++    /// `CanonicalWithoutPedersen` with the `Seq` columns cut at `2^k` rows, for programs
++    /// whose components all fit in `2^k` rows. Its preprocessed root differs from the
++    /// canonical ones, so prover and verifier must agree on `k`.
++    CanonicalWithoutPedersenUpTo(u32),
+ }
+ impl PreProcessedTraceVariant {
+     pub fn to_preprocessed_trace(&self) -> PreProcessedTrace {
+@@ -34,6 +38,17 @@ impl PreProcessedTraceVariant {
+             PreProcessedTraceVariant::CanonicalWithoutPedersen => {
+                 PreProcessedTrace::canonical_without_pedersen()
+             }
++            PreProcessedTraceVariant::CanonicalWithoutPedersenUpTo(k) => {
++                PreProcessedTrace::canonical_without_pedersen_up_to(*k)
++            }
++        }
++    }
++
++    /// The largest component, in log rows, this variant can prove, when it is bounded.
++    pub fn max_log_rows(&self) -> Option<u32> {
++        match self {
++            PreProcessedTraceVariant::CanonicalWithoutPedersenUpTo(k) => Some(*k),
++            _ => None,
+         }
+     }
+ }
+diff --git a/stwo_cairo_prover/crates/common/src/preprocessed_columns/preprocessed_trace.rs b/stwo_cairo_prover/crates/common/src/preprocessed_columns/preprocessed_trace.rs
+index 40d25269..923ea8bf 100644
+--- a/stwo_cairo_prover/crates/common/src/preprocessed_columns/preprocessed_trace.rs
++++ b/stwo_cairo_prover/crates/common/src/preprocessed_columns/preprocessed_trace.rs
+@@ -56,7 +56,18 @@ impl PreProcessedTrace {
+     /// Generates a canonical preprocessed trace without the `Pedersen` points. Used in proving
+     /// programs that do not use `Pedersen` hash, e.g. the recursive verifier.
+     pub fn canonical_without_pedersen() -> Self {
+-        let seq = (LOG_N_LANES..=MAX_SEQUENCE_LOG_SIZE)
++        Self::canonical_without_pedersen_up_to(MAX_SEQUENCE_LOG_SIZE)
++    }
++
++    /// `canonical_without_pedersen` with `Seq` columns only up to `2^max_seq_log` rows.
++    /// The other tables are fixed-size (the largest are 2^20 rows), so this bounds the
++    /// preprocessed trace, its commitment and the prover's twiddles for small programs.
++    pub fn canonical_without_pedersen_up_to(max_seq_log: u32) -> Self {
++        assert!(
++            (LOG_N_LANES..=MAX_SEQUENCE_LOG_SIZE).contains(&max_seq_log),
++            "max_seq_log {max_seq_log} out of range"
++        );
++        let seq = (LOG_N_LANES..=max_seq_log)
+             .map(|x| Box::new(Seq::new(x)) as Box<dyn PreProcessedColumn>);
+         let bitwise_xor = XOR_N_BITS
+             .map(|n_bits| {
+diff --git a/stwo_cairo_prover/crates/prover/src/prover.rs b/stwo_cairo_prover/crates/prover/src/prover.rs
+index ff23f65f..533ed4b3 100644
+--- a/stwo_cairo_prover/crates/prover/src/prover.rs
++++ b/stwo_cairo_prover/crates/prover/src/prover.rs
+@@ -51,8 +51,17 @@ where
+         preprocessed_trace,
+         store_polynomials_coefficients,
+     } = prover_params;
++    // The canonical variants admit components up to LOG_MAX_ROWS; a bounded variant only
++    // up to its own size (and its fixed tables), so its twiddles can be that much smaller.
++    let log_max_rows = match preprocessed_trace.max_log_rows() {
++        Some(k) => {
++            let tables = preprocessed_trace.to_preprocessed_trace().log_sizes();
++            k.max(tables.into_iter().max().unwrap_or(0))
++        }
++        None => LOG_MAX_ROWS,
++    };
+     let twiddles = SimdBackend::precompute_twiddles(
+-        CanonicCoset::new(LOG_MAX_ROWS + pcs_config.fri_config.log_blowup_factor + 2)
++        CanonicCoset::new(log_max_rows + pcs_config.fri_config.log_blowup_factor + 2)
+             .circle_domain()
+             .half_coset,
+     );
+@@ -81,6 +90,11 @@ where
+     let span = span!(Level::INFO, "Base trace").entered();
+     let (claim, interaction_generator) = cairo_claim_generator.write_trace(&mut tree_builder);
+     span.exit();
++    let max_component = claim.log_sizes().iter().flatten().copied().max().unwrap_or(0);
++    assert!(
++        max_component <= log_max_rows,
++        "a component has 2^{max_component} rows; the preprocessed trace variant allows 2^{log_max_rows}"
++    );
+ 
+     claim.mix_into(channel);
+     tree_builder.commit(channel);
+diff --git a/stwo_cairo_prover/crates/prover/src/witness/components/cube_252.rs b/stwo_cairo_prover/crates/prover/src/witness/components/cube_252.rs
+index 88e2e865..2695efe0 100644
+--- a/stwo_cairo_prover/crates/prover/src/witness/components/cube_252.rs
++++ b/stwo_cairo_prover/crates/prover/src/witness/components/cube_252.rs
+@@ -58,11 +58,13 @@ impl ClaimGenerator {
+         // NOTE: This is not autogened, when updating the code, re-add this.
+         // TODO(Ohad): remove.
+         const RAYON_THREAD_STACK_SIZE: usize = 1024 * 1024 * 8;
++        // Where threads cannot be spawned (wasm32-wasip1) there is no pool, and the work
++        // runs on the current thread, which is then rayon's only worker.
+         let pool = rayon::ThreadPoolBuilder::new()
+             .stack_size(RAYON_THREAD_STACK_SIZE)
+             .build()
+-            .unwrap();
+-        let (trace, lookup_data, sub_component_inputs) = pool.install(|| {
++            .ok();
++        let (trace, lookup_data, sub_component_inputs) = install_or_current(pool, || {
+             write_trace_simd(
+                 self.packed_inputs,
+                 n_rows,
+@@ -3842,3 +3844,11 @@ impl InteractionClaimGenerator {
+         InteractionClaim { claimed_sum }
+     }
+ }
++
++/// Runs `f` in `pool`, or on the current thread when no pool could be built.
++fn install_or_current<R: Send>(pool: Option<rayon::ThreadPool>, f: impl FnOnce() -> R + Send) -> R {
++    match pool {
++        Some(pool) => pool.install(f),
++        None => f(),
++    }
++}
+diff --git a/stwo_cairo_prover/crates/prover/src/witness/components/partial_ec_mul.rs b/stwo_cairo_prover/crates/prover/src/witness/components/partial_ec_mul.rs
+index 26793dcb..ff2feab3 100644
+--- a/stwo_cairo_prover/crates/prover/src/witness/components/partial_ec_mul.rs
++++ b/stwo_cairo_prover/crates/prover/src/witness/components/partial_ec_mul.rs
+@@ -58,11 +58,13 @@ impl ClaimGenerator {
+         // NOTE: This is not autogened, when updating the code, re-add this.
+         // TODO(Ohad): remove.
+         const RAYON_THREAD_STACK_SIZE: usize = 1024 * 1024 * 8;
++        // Where threads cannot be spawned (wasm32-wasip1) there is no pool, and the work
++        // runs on the current thread, which is then rayon's only worker.
+         let pool = rayon::ThreadPoolBuilder::new()
+             .stack_size(RAYON_THREAD_STACK_SIZE)
+             .build()
+-            .unwrap();
+-        let (trace, lookup_data, sub_component_inputs) = pool.install(|| {
++            .ok();
++        let (trace, lookup_data, sub_component_inputs) = install_or_current(pool, || {
+             write_trace_simd(
+                 self.packed_inputs,
+                 n_rows,
+@@ -6386,3 +6388,11 @@ impl InteractionClaimGenerator {
+         InteractionClaim { claimed_sum }
+     }
+ }
++
++/// Runs `f` in `pool`, or on the current thread when no pool could be built.
++fn install_or_current<R: Send>(pool: Option<rayon::ThreadPool>, f: impl FnOnce() -> R + Send) -> R {
++    match pool {
++        Some(pool) => pool.install(f),
++        None => f(),
++    }
++}

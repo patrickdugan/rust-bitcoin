@@ -1,0 +1,6 @@
+# Separate workspace: the proving crates need a pinned nightly and heavy
+# dependencies (stwo, cairo-vm) that must not touch rust-bitcoin's MSRV or CI.
+[workspace]
+members = ["args"]
+exclude = ["prover"]
+resolver = "2"

@@ -1,0 +1,47 @@
+# Prover workspace: same stwo / stwo-cairo / cairo-vm revisions as Raito
+# (starkware-bitcoin/raito 48c237ac, root Cargo.toml), so proofs and program
+# hashes are comparable with Raito's own pipeline.
+[workspace]
+members = ["bench"]
+resolver = "3"
+
+[workspace.dependencies]
+bitcoin-zk-args = { path = "../args", features = ["raito-fixture"] }
+stwo = { git = "https://github.com/starkware-libs/stwo", rev = "45d0180", default-features = false }
+cairo-air = { git = "https://github.com/starkware-libs/stwo-cairo", rev = "e8bc9571675bb654b6e26a7bd53838a6ae78c344", default-features = false }
+stwo_cairo_prover = { git = "https://github.com/starkware-libs/stwo-cairo", rev = "e8bc9571675bb654b6e26a7bd53838a6ae78c344" }
+stwo-cairo-adapter = { git = "https://github.com/starkware-libs/stwo-cairo", rev = "e8bc9571675bb654b6e26a7bd53838a6ae78c344" }
+cairo-program-runner-lib = { git = "https://github.com/m-kus/proving-utils", rev = "148b20f0489f5b1e28990afdfb9e9cbb9be960ce", default-features = false }
+cairo-vm = { version = "3.0.0", features = ["std"] }
+# Same source and revision as the [patch.crates-io] entries below, so they unify.
+cairo-lang-executable = { git = "https://github.com/m-kus/cairo", rev = "13f3701f3d6c50086beb25ee3a191949bcc8dddf" }
+cairo-lang-execute-utils = { git = "https://github.com/m-kus/cairo", rev = "13f3701f3d6c50086beb25ee3a191949bcc8dddf" }
+cairo-lang-runner = { git = "https://github.com/m-kus/cairo", rev = "13f3701f3d6c50086beb25ee3a191949bcc8dddf" }
+serde_json = "1"
+
+[patch.crates-io]
+cairo-lang-executable = { git = "https://github.com/m-kus/cairo", rev = "13f3701f3d6c50086beb25ee3a191949bcc8dddf" }
+cairo-lang-runner = { git = "https://github.com/m-kus/cairo", rev = "13f3701f3d6c50086beb25ee3a191949bcc8dddf" }
+cairo-lang-casm = { git = "https://github.com/m-kus/cairo", rev = "13f3701f3d6c50086beb25ee3a191949bcc8dddf" }
+cairo-lang-execute-utils = { git = "https://github.com/m-kus/cairo", rev = "13f3701f3d6c50086beb25ee3a191949bcc8dddf" }
+# m-kus/cairo-vm c9aa51b (Raito's pin) plus the WASI std fix; see scripts/vendor.sh.
+cairo-vm = { path = "../../../rust-bitcoin-zk-vendor/cairo-vm/vm" }
+stwo-cairo-adapter = { path = "../../../rust-bitcoin-zk-vendor/stwo-cairo/stwo_cairo_prover/crates/adapter" }
+
+# Some dependencies name the m-kus/cairo-vm git source directly; send them to the same
+# vendored copy so there is one cairo-vm in the graph.
+[patch."https://github.com/m-kus/cairo-vm"]
+cairo-vm = { path = "../../../rust-bitcoin-zk-vendor/cairo-vm/vm" }
+
+# stwo-cairo e8bc957 (Raito's pin) plus the bounded preprocessed-trace variant;
+# see scripts/vendor.sh and patches/.
+[patch."https://github.com/starkware-libs/stwo-cairo"]
+cairo-air = { path = "../../../rust-bitcoin-zk-vendor/stwo-cairo/stwo_cairo_prover/crates/cairo-air" }
+stwo_cairo_prover = { path = "../../../rust-bitcoin-zk-vendor/stwo-cairo/stwo_cairo_prover/crates/prover" }
+stwo-cairo-adapter = { path = "../../../rust-bitcoin-zk-vendor/stwo-cairo/stwo_cairo_prover/crates/adapter" }
+stwo-cairo-common = { path = "../../../rust-bitcoin-zk-vendor/stwo-cairo/stwo_cairo_prover/crates/common" }
+stwo-cairo-serialize = { path = "../../../rust-bitcoin-zk-vendor/stwo-cairo/stwo_cairo_prover/crates/cairo-serialize" }
+stwo-cairo-serialize-derive = { path = "../../../rust-bitcoin-zk-vendor/stwo-cairo/stwo_cairo_prover/crates/cairo-serialize-derive" }
+
+[profile.release]
+debug = false

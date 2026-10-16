@@ -1,0 +1,19 @@
+[package]
+name = "bitcoin-zk-args"
+version = "0.0.0"
+edition = "2021"
+description = "Serialize rust-bitcoin blocks into Raito client arguments (Cairo serde felts)"
+license = "CC0-1.0"
+publish = false
+
+[features]
+# Read Raito's JSON test fixtures (chain states and prevout metadata).
+raito-fixture = ["dep:serde_json"]
+
+[dependencies]
+bitcoin = { path = "../../bitcoin", default-features = false, features = ["std"] }
+serde_json = { version = "1", optional = true }
+
+[[test]]
+name = "raito_fixtures"
+required-features = ["raito-fixture"]
