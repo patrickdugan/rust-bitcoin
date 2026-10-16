@@ -45,3 +45,12 @@ fn block_170_first_p2pk_spend() { check(170); }
 
 #[test]
 fn block_2016_first_retarget_boundary() { check(2016); }
+
+#[test]
+fn block_116928_twelve_p2pkh_spends() { check(116928); }
+
+#[test]
+fn block_481824_first_segwit() { check(481824); }
+
+#[test]
+fn block_709632_first_taproot() { check(709632); }

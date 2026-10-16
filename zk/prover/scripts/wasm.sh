@@ -45,5 +45,14 @@ for r in $RUNS; do
     st-bounded-170)  run wasm-st/fork/direct-k20/170/full "$ST" 170 --direct --max-log-rows 20 ;;
     mt-bounded-2016) run wasm-mt/fork/direct-k20/2016/full "$MT" 2016 --direct --max-log-rows 20 ;;
     mt-bounded-170)  run wasm-mt/fork/direct-k20/170/full "$MT" 170 --direct --max-log-rows 20 ;;
+    # Any block in the test data, by height H, as in native.sh: st-exec-H, mt-exec-H,
+    # st-kK-H, mt-kK-H (bounded proofs at 2^K rows).
+    st-exec-*)       h=${r##*-}; run wasm-st/fork/direct/$h/execute "$ST" "$h" --direct --stop-after execute ;;
+    mt-exec-*)       h=${r##*-}; run wasm-mt/fork/direct/$h/execute "$MT" "$h" --direct --stop-after execute ;;
+    st-k[0-9]*-*)    h=${r##*-}; k=${r#st-k}; k=${k%-*}
+                     run wasm-st/fork/direct-k$k/$h/full "$ST" "$h" --direct --max-log-rows "$k" ;;
+    mt-k[0-9]*-*)    h=${r##*-}; k=${r#mt-k}; k=${k%-*}
+                     run wasm-mt/fork/direct-k$k/$h/full "$MT" "$h" --direct --max-log-rows "$k" ;;
+    *) echo "unknown run $r" >&2 ;;
   esac
 done

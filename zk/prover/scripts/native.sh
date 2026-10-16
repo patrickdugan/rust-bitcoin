@@ -38,5 +38,14 @@ for r in $RUNS; do
     # This fork's bounded preprocessed trace (Seq and twiddles up to 2^20 rows).
     fork-direct-bounded-2016) run native/fork/direct-k20/2016/full "$FORK" 2016 --direct --max-log-rows 20 ;;
     fork-direct-bounded-170)  run native/fork/direct-k20/170/full "$FORK" 170 --direct --max-log-rows 20 ;;
+    # Any block in the test data, by height H: fork-direct-exec-H (execute only),
+    # fork-direct-kK-H (bounded proof, components up to 2^K rows), fork-direct-capN-H
+    # (cairo-vm stopped after N steps, for blocks too large to execute here).
+    fork-direct-exec-*)       h=${r##*-}; run native/fork/direct/$h/execute "$FORK" "$h" --direct --stop-after execute ;;
+    fork-direct-k[0-9]*-*)    h=${r##*-}; k=${r#fork-direct-k}; k=${k%-*}
+                              run native/fork/direct-k$k/$h/full "$FORK" "$h" --direct --max-log-rows "$k" ;;
+    fork-direct-cap[0-9]*-*)  h=${r##*-}; n=${r#fork-direct-cap}; n=${n%-*}
+                              run native/fork/direct-cap$n/$h/execute "$FORK" "$h" --direct --stop-after execute --max-steps "$n" ;;
+    *) echo "unknown run $r" >&2 ;;
   esac
 done

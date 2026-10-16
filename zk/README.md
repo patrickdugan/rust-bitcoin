@@ -65,6 +65,61 @@ The stock 9 GB runs were erratic (even their cairo-vm stage took 3 to 16 s) beca
 how much of the bounded variant's speedup survives on a machine with ample RAM is not
 measured here. Its memory reduction (3.5x on block 170, 4.5x on block 2016) is.
 
+## Larger blocks: the proving cost does not fit (2026-10-16, later runs)
+
+Three more blocks, all passing the args differential test: 116928 (10 transactions
+spending 12 P2PKH outputs, the smallest multi-input block among Raito's fixtures), the
+first segwit block 481824 (1,866 transactions, 5,192 inputs) and the first taproot block
+709632 (2,043 transactions, 6,630 inputs, none yet spending a P2TR output). As for blocks
+170 and 2016, the numbers are the cost of proving a run of Raito's client on each block's
+arguments; such a proof is not bound to a particular block. **No proof run completed for
+any of the three, natively or in WASM**, so there are no prove times and no native/WASM
+proof hashes to compare for them. No further busy block was added: the segwit and
+taproot blocks are busy blocks, and they do not fit.
+
+| block | txs / inputs | Cairo steps | largest component | native | WASM (wasm32-wasip1) |
+|---|---|---|---|---|---|
+| 116928 | 10 / 12 | 9,032,848 | 2^22 rows, so k = 22 | executes (10.2 s, 1.5 GB); proving needs over 7.7 GiB, not completed here | executes (33.1 s, 1.7 GB, same steps); proving runs out of wasm32 memory in the adapter, before the prover starts |
+| 481824 | 1,866 / 5,192 | over 30M (cap); about 3.8 billion estimated | about 2^31 rows, estimated | stopped at a 30M-step cap: 21.1 s, 2.4 GB | execution aborts after 79 s: out of wasm32 memory |
+| 709632 | 2,043 / 6,630 | over 30M (cap); about 4.9 billion estimated | about 2^31 rows, estimated | stopped at a 30M-step cap: 27.2 s, 2.4 GB | execution aborts after 63 s: out of wasm32 memory |
+
+- **Block 116928.** Proving at k = 20 ran the base trace and stopped at the patch's size
+  check ("a component has 2^22 rows"), at 7,864 MiB RSS with no swap in the 15.5 GB VM.
+  A k = 22 proof also needs the interaction trace and the blown-up commitments, so 7.7
+  GiB is a floor, not the peak, and already about twice what wasm32 can address. The
+  one native k = 22 attempt ran after the WSL VM had been capped at 4.5 GB (below): it
+  paged, and the guard killed it after 91 s at 3.9 GB RSS plus 6.1 GiB of swap. Whether
+  it fits in the 15.5 GB VM used for the tables above is not measured. In WASM, the
+  4-thread k = 22 attempt failed earlier than the prover: wasm32 ran out of memory in
+  `stwo_cairo_adapter::relocator::Relocator::relocate_memory`, inside `adapt`, with the
+  guard not firing (4.4 GiB of wasmtime swapped out at most). It ran in the capped VM
+  while another session compiled RocksDB, so it paged for 33 minutes, and the time
+  means nothing. The single-threaded attempt was stopped by a SIGTERM from outside the
+  benchmark after 8.5 minutes, before reaching a result.
+- **Blocks 481824 and 709632.** cairo-vm in proof mode keeps the whole trace and memory,
+  about 80 bytes per step (2.4 GB at the 30M-step cap, `--max-steps`). The step
+  estimates are each block's input count times block 116928's cost per input,
+  (9,032,848 - 192,843) / 12, about 737k steps, where 192,843 is block 2016's
+  coinbase-only run. Multisig inputs check several signatures, so the real counts are
+  probably higher. At 80 bytes per step, execution alone would need about 300 GB and
+  390 GB. Scaling block 116928's 2^22-row largest component by the step ratio gives
+  about 2^31 rows, far beyond the 2^25-row `Seq` columns of stock stwo-cairo. A larger k
+  does not help these blocks; they would have to be split across proofs (per
+  transaction or per input, aggregated recursively).
+- **In wasm32 they fail earlier, during execution:** cairo-vm's trace vector cannot grow
+  inside the 4 GiB linear memory (`RawVec::grow_one` -> `handle_alloc_error` from
+  `VirtualMachine::run_instruction`). wasmtime peaked at 2.9 GB RSS plus 2.0 GB of swap
+  (481824) and 2.1 GB plus 1.6 GB (709632). The guard did not fire, so the limit hit was
+  wasm32's own. The threaded build runs the same single-threaded cairo-vm and was not
+  run separately.
+- **Conditions differ from the tables above.** Other sessions' Rust and C++ builds shared
+  the WSL VM during all of these runs (load average 5 to 20), so their times are
+  pessimistic. Midway, the VM was capped at 4.5 GB of RAM (`.wslconfig`, at the
+  machine owner's request): the k = 20 size run and the native executions ran before the
+  cap, while the native k = 22 attempt and all WASM runs ran after it. The WASM failures
+  above are wasm32's 4 GiB limit, not the VM's (rough RSS plus swap stayed under 5 GB
+  with 32 GiB of swap available).
+
 ## Where the time and memory went, and what this branch changed
 
 1. **The bootloader was 82 to 95% of the trace.** Raito proves by running its client as
@@ -103,9 +158,10 @@ measured here. Its memory reduction (3.5x on block 170, 4.5x on block 2016) is.
 - **One laptop, three runs per cell**, under WSL2, with the host also in use. Prove times
   ranged up to about 20% around the median for the bounded runs; the WASM/native ratios
   come from interleaved runs in the same session.
-- **Two blocks.** Block 170 has one signature. Segwit and taproot blocks, and blocks with
-  thousands of inputs, will have components far above 2^20 rows, so they need a larger
-  k (or splitting a block across proofs), and the WASM memory budget will bind sooner.
+- **Proof runs for two blocks only.** Block 170 has one signature. The larger blocks
+  tried (see "Larger blocks" above) did not fit: twelve P2PKH inputs already need 2^22-row
+  components and more than 7.7 GiB, and segwit- and taproot-era blocks with thousands of
+  inputs run to billions of steps, so they have to be split across proofs.
 
 ## Soundness findings in the Shinigami path of upstream Raito
 
@@ -133,6 +189,9 @@ WSL Ubuntu 24.04 with rustup, Scarb, wasi-sdk at `/opt/wasi-sdk`, wasmtime 49 an
     zk/prover/scripts/build-wasm.sh                     # both WASM targets
     RUNS="fork-direct-bounded-170" zk/prover/scripts/native.sh
     RUNS="mt-bounded-170 st-bounded-170" zk/prover/scripts/wasm.sh
+    # any block in args/tests/data by height: exec-H, kK-H (bounded proof), capN-H
+    RUNS="fork-direct-exec-116928 fork-direct-k22-116928 fork-direct-cap30000000-481824" zk/prover/scripts/native.sh
+    RUNS="st-exec-481824 st-k22-116928 mt-k22-116928" zk/prover/scripts/wasm.sh
 
 Companion commits (local, not pushed): Raito `shinigami-provable` at `a7d8eb4` (on
 upstream 48c237a), and stwo-cairo `small-preprocessed` at `76035a6d` (on e8bc957), whose

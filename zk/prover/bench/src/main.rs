@@ -20,6 +20,9 @@
 //!            --fixture full_169.json --block block_170.bin --out DIR [--direct]
 //!            [--stop-after args|execute|adapt|prove] [--no-pedersen] [--pow-bits N]
 //!            [--max-log-rows K]   (bounded preprocessed trace; this fork's stwo-cairo patch)
+//!            [--max-steps N]      (direct mode: stop cairo-vm after N steps, report the
+//!                                  time and memory to get there; for blocks too large
+//!                                  to execute in this machine's RAM)
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -38,7 +41,9 @@ use cairo_program_runner_lib::utils::get_cairo_run_config;
 use cairo_vm::cairo_run::CairoRunConfig;
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::types::program::Program;
-use cairo_vm::vm::runners::cairo_runner::CairoRunner;
+use cairo_vm::vm::errors::cairo_run_errors::CairoRunError;
+use cairo_vm::vm::errors::vm_errors::VirtualMachineError;
+use cairo_vm::vm::runners::cairo_runner::{CairoRunner, RunResources};
 use stwo::core::fri::FriConfig;
 use stwo::core::pcs::PcsConfig;
 use stwo::core::vcs::blake2_merkle::Blake2sMerkleChannel;
@@ -57,6 +62,7 @@ struct Opts {
     pow_bits: u32,
     direct: bool,
     max_log_rows: Option<u32>,
+    max_steps: Option<usize>,
 }
 
 fn parse_opts() -> Opts {
@@ -72,6 +78,7 @@ fn parse_opts() -> Opts {
         pow_bits: 26,
         direct: false,
         max_log_rows: None,
+        max_steps: None,
     };
     while let Some(k) = a.next() {
         let mut v = || a.next().unwrap_or_else(|| panic!("{k} needs a value"));
@@ -86,6 +93,7 @@ fn parse_opts() -> Opts {
             "--no-pedersen" => o.no_pedersen = true,
             "--direct" => o.direct = true,
             "--max-log-rows" => o.max_log_rows = Some(v().parse().expect("max log rows")),
+            "--max-steps" => o.max_steps = Some(v().parse().expect("max steps")),
             _ => panic!("unknown argument {k}"),
         }
     }
@@ -147,8 +155,23 @@ fn main() {
     let t = Instant::now();
     let executable: Executable =
         serde_json::from_reader(std::fs::File::open(&o.executable).expect("executable")).expect("parse executable");
-    let runner = if o.direct { run_direct(&executable, &args_path) } else { run_bootloaded(&o, &args_path) };
+    assert!(o.direct || o.max_steps.is_none(), "--max-steps needs --direct");
     r.text("mode", if o.direct { "direct" } else { "bootloader" });
+    let runner = if o.direct {
+        match run_direct(&executable, &args_path, o.max_steps) {
+            Ok(runner) => runner,
+            // The step cap ran out before the program finished: report how far it got.
+            Err(CairoRunError::VmException(e)) if matches!(e.inner_exc, VirtualMachineError::UnfinishedExecution) => {
+                r.num("execute_s", t.elapsed().as_secs_f64());
+                r.int("steps_at_least", o.max_steps.expect("only a step cap stops a run unfinished") as u64);
+                finish(r, total);
+                std::process::exit(3);
+            }
+            Err(e) => panic!("cairo-vm run: {e}"),
+        }
+    } else {
+        run_bootloaded(&o, &args_path)
+    };
     r.num("execute_s", t.elapsed().as_secs_f64());
     r.int("steps", runner.vm.get_current_step() as u64);
     if o.stop_after == "execute" {
@@ -255,7 +278,12 @@ fn run_bootloaded(o: &Opts, args_path: &std::path::Path) -> CairoRunner {
 }
 
 /// `cairo-prove`'s path: the executable's standalone entry point, no bootloader.
-fn run_direct(executable: &Executable, args_path: &std::path::Path) -> CairoRunner {
+/// With `max_steps`, cairo-vm stops with `UnfinishedExecution` once that many steps ran.
+fn run_direct(
+    executable: &Executable,
+    args_path: &std::path::Path,
+    max_steps: Option<usize>,
+) -> Result<CairoRunner, CairoRunError> {
     let entry = executable
         .entrypoints
         .iter()
@@ -268,7 +296,7 @@ fn run_direct(executable: &Executable, args_path: &std::path::Path) -> CairoRunn
         user_args: vec![vec![Arg::Array(user_args)]],
         string_to_hint,
         starknet_state: Default::default(),
-        run_resources: Default::default(),
+        run_resources: max_steps.map(RunResources::new).unwrap_or_default(),
         syscalls_used_resources: Default::default(),
         no_temporary_segments: false,
         markers: Default::default(),
@@ -286,7 +314,7 @@ fn run_direct(executable: &Executable, args_path: &std::path::Path) -> CairoRunn
         fill_holes: true,
         ..Default::default()
     };
-    cairo_vm::cairo_run::cairo_run_program(&program, &config, &mut hint_processor).expect("cairo-vm run")
+    cairo_vm::cairo_run::cairo_run_program(&program, &config, &mut hint_processor)
 }
 
 /// A bytecode word (reduced mod p, as the VM loads it) as eight little-endian u32 limbs,
