@@ -19,6 +19,15 @@ The same `zk-bench` binary builds for x86_64 and for `wasm32-wasip1` /
 same proof, byte for byte, as the native build** (identical SHA-256 of the proof files),
 and that proof verifies.
 
+> **What these benchmark proofs state, and what they do not.** Raito's `client` program
+> takes the chain states and the block as *private* arguments and outputs nothing. A proof
+> of it therefore says only that *some* input passed validation; it is not bound to block
+> 170 or any other block. The step counts, times and memory below measure the cost of
+> validating those blocks, which is what they were for; they are not proofs about the
+> blocks. The proofs that do bind to the chain are the header-chain segment proofs in
+> [sync/README.md](sync/README.md): that program publishes commitments to the chain state
+> and block MMR it starts from and ends at, and the light client checks them.
+
 Block 170 is the first transaction spending a real output (Satoshi to Hal Finney, one
 P2PK ECDSA check). Block 2016 is the first difficulty-retarget block (coinbase only).
 
@@ -170,9 +179,15 @@ to the Shinigami fork; fixed on the `shinigami-provable` branch of the Raito clo
 reported upstream yet.
 
 1. Raito pins upstream Shinigami 1963116, which verifies ECDSA through Starknet secp256k1
-   syscalls. In a bootloader/stwo proof a syscall's result comes from a hint, so the
-   signature check is not constrained. The upstream client did execute block 170 under
-   the bootloader (3,420,337 steps) without complaint.
+   syscalls. The client built from it (`--no-default-features --features shinigami`) has
+   ten `SystemCall` hint sites (the five secp256k1 selectors among them) and its entry
+   points declare no `system` builtin. Raito's bootloader re-verifies syscalls only
+   through the `system` pointer it hands a task (`verify_sha256`, which accepts SHA-256
+   only), so it never sees these: they are serviced by hint-allocated memory and their
+   results are not constrained by the proof. The upstream client did execute block 170
+   under that bootloader (3,420,337 steps) without complaint. (Raito's `assumevalid`
+   program is different: it declares `system`, and its SHA-256 syscalls are re-checked by
+   the bootloader. An earlier draft of these notes wrongly said otherwise.)
 2. `validate_script` leaves the input loop when the first input passes, so inputs after
    the first are never script-checked.
 3. Soft-fork script flags are derived from `inputs[0].previous_output.block_height` (the
@@ -193,9 +208,10 @@ WSL Ubuntu 24.04 with rustup, Scarb, wasi-sdk at `/opt/wasi-sdk`, wasmtime 49 an
     RUNS="fork-direct-exec-116928 fork-direct-k22-116928 fork-direct-cap30000000-481824" zk/prover/scripts/native.sh
     RUNS="st-exec-481824 st-k22-116928 mt-k22-116928" zk/prover/scripts/wasm.sh
 
-Companion commits (local, not pushed): Raito `shinigami-provable` at `a7d8eb4` (on
-upstream 48c237a), and stwo-cairo `small-preprocessed` at `76035a6d` (on e8bc957), whose
-diff from e8bc957 is exactly `prover/patches/stwo-cairo-zk.patch`.
+Companion commits (local, not pushed): Raito `shinigami-provable` at `9acd59f` (on
+upstream 48c237a; adds `packages/chain_segment`), and stwo-cairo `small-preprocessed` at
+`e088e477` (on e8bc957), whose diff from e8bc957 is exactly
+`prover/patches/stwo-cairo-zk.patch`.
 
 The Raito client is built from `../raito` (branch `shinigami-provable`) with
 `scarb --profile release build --package client --target-kinds executable

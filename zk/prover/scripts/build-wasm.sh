@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build zk-bench for WASI. Needs wasi-sdk (for secp256k1-sys's C code) at $WASI_SDK.
+# Build zk-bench (or BIN=zk-sync) for WASI. Needs wasi-sdk (for secp256k1-sys's C code) at $WASI_SDK.
 #   wasm32-wasip1          single thread, simd128
 #   wasm32-wasip1-threads  rayon on wasi-threads, simd128
 # Both cap linear memory at 4 GiB, the wasm32 ceiling (the threads target already
@@ -14,6 +14,6 @@ for T in ${TARGETS:-wasm32-wasip1 wasm32-wasip1-threads}; do
   export "CC_$U=$WASI_SDK/bin/clang" "AR_$U=$WASI_SDK/bin/llvm-ar"
   export "CFLAGS_$U=--sysroot=$WASI_SDK/share/wasi-sysroot"
   echo "== $T"
-  RUSTFLAGS="$COMMON" cargo build --release --target "$T" --bin zk-bench
-  ls -la "$CARGO_TARGET_DIR/$T/release/zk-bench.wasm"
+  RUSTFLAGS="$COMMON" cargo build --release --target "$T" --bin "${BIN:-zk-bench}"
+  ls -la "$CARGO_TARGET_DIR/$T/release/${BIN:-zk-bench}.wasm"
 done

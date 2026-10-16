@@ -127,7 +127,7 @@ pub struct Writer {
 }
 
 impl Writer {
-    fn uint(&mut self, v: u128) { self.felts.push(Felt::from_u128(v)); }
+    pub fn uint(&mut self, v: u128) { self.felts.push(Felt::from_u128(v)); }
 
     fn bool(&mut self, v: bool) { self.uint(u128::from(v)); }
 
@@ -142,7 +142,7 @@ impl Writer {
     }
 
     /// `Digest { value: [u32; 8] }`: internal byte order, read as big-endian words.
-    fn digest(&mut self, internal: [u8; 32]) {
+    pub fn digest(&mut self, internal: [u8; 32]) {
         for w in internal.chunks(4) {
             self.uint(u128::from(u32::from_be_bytes([w[0], w[1], w[2], w[3]])));
         }
@@ -160,7 +160,7 @@ impl Writer {
         self.uint(rest.len() as u128);
     }
 
-    fn len(&mut self, n: usize) { self.uint(n as u128); }
+    pub fn len(&mut self, n: usize) { self.uint(n as u128); }
 
     pub fn chain_state(&mut self, cs: &ChainState) {
         self.uint(u128::from(cs.block_height));
@@ -174,7 +174,7 @@ impl Writer {
         }
     }
 
-    fn header(&mut self, h: &Header) {
+    pub fn header(&mut self, h: &Header) {
         self.uint(u128::from(h.version.to_consensus() as u32));
         self.uint(u128::from(h.time.to_u32()));
         self.uint(u128::from(h.bits.to_consensus()));

@@ -32,10 +32,19 @@ index 73481316..1c5ca4a9 100644
      }
  }
 diff --git a/stwo_cairo_prover/crates/common/src/preprocessed_columns/preprocessed_trace.rs b/stwo_cairo_prover/crates/common/src/preprocessed_columns/preprocessed_trace.rs
-index 40d25269..923ea8bf 100644
+index 40d25269..3da37cb0 100644
 --- a/stwo_cairo_prover/crates/common/src/preprocessed_columns/preprocessed_trace.rs
 +++ b/stwo_cairo_prover/crates/common/src/preprocessed_columns/preprocessed_trace.rs
-@@ -56,7 +56,18 @@ impl PreProcessedTrace {
+@@ -24,6 +24,8 @@ const XOR_N_BITS: [u32; 5] = [4, 7, 8, 9, 10];
+ 
+ // Used by every builtin for a read of the memory.
+ pub const MAX_SEQUENCE_LOG_SIZE: u32 = 25;
++/// Smallest bound `canonical_without_pedersen_up_to` accepts.
++pub const MIN_SEQUENCE_LOG_SIZE: u32 = 20;
+ 
+ pub trait PreProcessedColumn {
+     fn packed_at(&self, vec_row: usize) -> PackedM31;
+@@ -56,7 +58,20 @@ impl PreProcessedTrace {
      /// Generates a canonical preprocessed trace without the `Pedersen` points. Used in proving
      /// programs that do not use `Pedersen` hash, e.g. the recursive verifier.
      pub fn canonical_without_pedersen() -> Self {
@@ -47,8 +56,10 @@ index 40d25269..923ea8bf 100644
 +    /// The other tables are fixed-size (the largest are 2^20 rows), so this bounds the
 +    /// preprocessed trace, its commitment and the prover's twiddles for small programs.
 +    pub fn canonical_without_pedersen_up_to(max_seq_log: u32) -> Self {
++        // The fixed tables (e.g. range_check_20) are read through Seq columns of their own
++        // size, so anything below 2^20 can prove nothing.
 +        assert!(
-+            (LOG_N_LANES..=MAX_SEQUENCE_LOG_SIZE).contains(&max_seq_log),
++            (MIN_SEQUENCE_LOG_SIZE..=MAX_SEQUENCE_LOG_SIZE).contains(&max_seq_log),
 +            "max_seq_log {max_seq_log} out of range"
 +        );
 +        let seq = (LOG_N_LANES..=max_seq_log)

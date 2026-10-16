@@ -571,6 +571,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoin-p2p-messages"
+version = "0.1.0"
+dependencies = [
+ "bitcoin-consensus-encoding",
+ "bitcoin-internals",
+ "bitcoin-network-kind",
+ "bitcoin-primitives",
+ "bitcoin-units",
+ "bitcoin_hashes",
+ "hex-conservative",
+]
+
+[[package]]
 name = "bitcoin-primitives"
 version = "0.103.1"
 dependencies = [
@@ -623,11 +636,43 @@ dependencies = [
  "cairo-program-runner-lib",
  "cairo-vm",
  "num-bigint",
+ "parking_lot_core",
  "serde_json",
  "stwo",
  "stwo-cairo-adapter",
  "stwo_cairo_prover",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "bitcoin-zk-sync"
+version = "0.0.0"
+dependencies = [
+ "bitcoin",
+ "bitcoin-p2p-messages",
+ "bitcoin-zk-args",
+]
+
+[[package]]
+name = "bitcoin-zk-sync-cli"
+version = "0.0.0"
+dependencies = [
+ "bitcoin",
+ "bitcoin-p2p-messages",
+ "bitcoin-zk-args",
+ "bitcoin-zk-sync",
+ "blake2",
+ "cairo-air",
+ "cairo-lang-executable",
+ "cairo-lang-execute-utils",
+ "cairo-lang-runner",
+ "cairo-vm",
+ "num-bigint",
+ "parking_lot_core",
+ "serde_json",
+ "stwo",
+ "stwo-cairo-adapter",
+ "stwo_cairo_prover",
 ]
 
 [[package]]

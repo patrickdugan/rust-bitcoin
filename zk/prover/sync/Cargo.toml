@@ -1,0 +1,32 @@
+[package]
+name = "bitcoin-zk-sync-cli"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.89"
+description = "Prove header-chain segments with stwo-cairo and sync a rust-bitcoin light client from the proofs"
+license = "CC0-1.0"
+publish = false
+
+[[bin]]
+name = "zk-sync"
+path = "src/main.rs"
+
+[dependencies]
+bitcoin = { path = "../../../bitcoin", default-features = false, features = ["std"] }
+p2p = { package = "bitcoin-p2p-messages", path = "../../../p2p" }
+bitcoin-zk-args = { path = "../../args" }
+bitcoin-zk-sync = { path = "../../sync" }
+stwo = { workspace = true }
+cairo-air = { workspace = true }
+stwo_cairo_prover = { workspace = true }
+stwo-cairo-adapter = { workspace = true }
+cairo-vm = { workspace = true }
+cairo-lang-executable = { workspace = true }
+cairo-lang-execute-utils = { workspace = true }
+cairo-lang-runner = { workspace = true }
+serde_json = { workspace = true }
+num-bigint = "0.4"
+blake2 = { version = "0.10", default-features = false }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+parking_lot_core = { version = "0.9", features = ["nightly"] }

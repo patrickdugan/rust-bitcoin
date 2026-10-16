@@ -1,0 +1,15 @@
+[package]
+name = "bitcoin-zk-sync"
+version = "0.0.0"
+edition = "2021"
+description = "ZeroSync-style light client on rust-bitcoin: trust a header chain proven by STARKs, extend it, check SPV inclusion"
+license = "CC0-1.0"
+publish = false
+
+[dependencies]
+bitcoin = { path = "../../bitcoin", default-features = false, features = ["std"] }
+p2p = { package = "bitcoin-p2p-messages", path = "../../p2p" }
+bitcoin-zk-args = { path = "../args" }
+
+[dev-dependencies]
+blake2 = { version = "0.10", default-features = false }
